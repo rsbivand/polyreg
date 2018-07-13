@@ -2,5 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+<<<<<<< HEAD
 .DS_Store
 experiments/.DS_store
+=======
+>>>>>>> upstream/master

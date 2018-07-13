@@ -15,7 +15,7 @@
 #' @export
 
 xvalPoly <- function(xy, maxDeg, maxInteractDeg = maxDeg, use = "lm",
-                     pcaMethod = FALSE,pcaPortion = 0.9, glmMethod = "one",
+                     pcaMethod = NULL,pcaPortion = 0.9, glmMethod = "one",
                      nHoldout=min(10000,round(0.2*nrow(xy))),stage2deg=NULL,
                      yCol = NULL,printTimes=TRUE,cls=NULL,dropout=0,startDeg=1)
 {
@@ -31,8 +31,11 @@ xvalPoly <- function(xy, maxDeg, maxInteractDeg = maxDeg, use = "lm",
      y <- as.numeric(y)
      xy[,ncol(xy)] <- y
   }
-
-  if (pcaMethod) {
+  
+  if (is.null(pcaMethod)) {
+    xdata <- xy[,-ncol(xy), drop=FALSE]
+  } else if (pcaMethod == "prcomp") {
+    
     tmp <- system.time(
       xy.pca <- prcomp(xy[,-ncol(xy)])
     )
@@ -44,9 +47,25 @@ xvalPoly <- function(xy, maxDeg, maxInteractDeg = maxDeg, use = "lm",
     }
     if (printTimes) cat(k,' principal comps used\n')
     xdata <- xy.pca$x[,1:k, drop=FALSE]
+  } else if (pcaMethod == "RSpectra") {
+    require(Matrix)
+    require(RSpectra)
+    xyscale <- scale(xy[,-ncol(xy)], center=TRUE, scale=FALSE)
+    xy.cov <- cov(xyscale)
+    sparse <- Matrix(data=as.matrix(xy.cov), sparse = TRUE)
+    class(sparse) <- "dgCMatrix"
+    xy.eig <- eigs(sparse, ncol(sparse))
+    pcNo <- cumsum(xy.eig$values)/sum(xy.eig$values)
+    for (k in 1:length(pcNo)) {
+      if (pcNo[k] >= pcaPortion)
+        break
+    }
+    if (printTimes) cat(k,' principal comps used\n')
+    xdata <- as.matrix(xy[,-ncol(xy)]) %*% xy.eig$vectors[,1:k]
+    
   } else {
-    xdata <- xy[,-ncol(xy), drop=FALSE]
-  }
+    stop("pcaMethod should be either NULL, prcomp, or RSpectra")
+  } 
 
   tmp <- system.time(
     poly.xy <- getPoly(xdata, maxDeg, maxInteractDeg)
@@ -84,7 +103,7 @@ xvalPoly <- function(xy, maxDeg, maxInteractDeg = maxDeg, use = "lm",
       colnames(train1)[ncol(train1)] <- "y"
 
 
-      pol <- polyFit(train1,i,m,use,pcaMethod=FALSE,pcaPortion,glmMethod,
+      pol <- polyFit(train1,i,m,use,pcaMethod=NULL,pcaPortion,glmMethod,
                      polyMat = train1,stage2deg=stage2deg,cls=cls,
                      dropout=0)
       pred <- predict(pol, test1, test1)
@@ -161,15 +180,42 @@ xvalNnet <- function(xy,size,linout, pcaMethod = FALSE,pcaPortion = 0.9,
 #        Y column of xy (last one, or yCol) must be a factor; otherwise
 #        must NOT be a factor
 #    nHoldout,yCol as above
-#    rmArgs:  remaining optional arguments to kms()
+#    units,activation,dropout: as in kms()
 
-# return: a vector of mean absolute error (for lm) or accuracy (for glm),
-#         the i-th element of the list is for degree = i
-#' @export
+# examples:
 
-xvalKf <- function(xy,nHoldout=min(10000,round(0.2*nrow(xy))),yCol=NULL,rmArgs=NULL)
+# classification, 2 hidden layers, with 3rd layer for forming the
+# predictions
+# xvalKf(pe,units=c(15,15,NA),activation=c('relu','relu','softmax'),
+#    dropout=c(0.1,0.1,NA)) 
+
+# regression, 3 hidden layers, with 4th layer for forming the
+# predictions
+# xvalKf(pe,units=c(25,25,5,NA),activation=c('relu','relu','relu','linear'),
+#    dropout=c(0.4,0.3,0.3,NA))
+
+xvalKf <- function(xy,nHoldout=min(10000,round(0.2*nrow(xy))),yCol=NULL,
+   units,activation,dropout)
 {
   require(kerasformula)
+
+  # build up the 'layers' argument for kms()
+  u <- paste0('units=c(',paste0(units,collapse=','),')')
+  a <- 'activation=c('
+  for (i in 1:length(activation)) {
+     ia <- activation[i]
+     a <- paste0(a,'"',ia,'"')
+     if (i < length(activation)) a <- paste0(a,',')
+  }
+  a <- paste0(a,')')
+  d <- paste0('c(',paste0(dropout,collapse=','),')')
+  layers <- paste0('layers=list(',u,',')
+  layers <- paste0(layers,a,',')
+  layers <- paste0(layers,d,',')
+  layers <- paste0(layers,'use_bias = TRUE, kernel_initializer = NULL,')
+  layers <- paste0(layers,'kernel_regularizer = "regularizer_l1",')
+  layers <- paste0(layers,'bias_regularizer = "regularizer_l1",')
+  layers <- paste0(layers,'activity_regularizer = "regularizer_l1")')
 
   if (is.null(yCol)) yCol <- ncol(xy)
   tmp <- splitData(xy,nHoldout)
@@ -178,15 +224,12 @@ xvalKf <- function(xy,nHoldout=min(10000,round(0.2*nrow(xy))),yCol=NULL,rmArgs=N
   testingx <- tmp$testSet[,-yCol]
   testingy <- tmp$testSet[,yCol]
 
-
   yName <- names(xy)[yCol]
   trainingy <- training[,yCol]
   classcase <- is.factor(trainingy)
   # loss <- 'NULL'
-  cmd <- paste0('kfout <- kms(',yName,' ~ .,data=training')
-  # cmd <- paste0(cmd,loss,')')
-  if (!is.null(rmArgs)) cmd <- paste0(cmd,',rmArgs=\"',rmArgs,'\"')
-  cmd <- paste0(cmd,')')
+  cmd <- 
+     paste0('kfout <- kms(',yName,' ~ .,data=training,',layers,')')
   eval(parse(text=cmd))
   preds <- predict(kfout,testingx)$fit
   if (!classcase) {  # regression case
