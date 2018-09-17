@@ -4,27 +4,43 @@
 \alias{FSR}
 \title{FSR}
 \usage{
-FSR(Xy, max_poly_degree = 4, max_interaction_degree = 2,
-  cor_type = "kendall", threshold = -1.001, pTraining = 0.8,
-  pValidation = 0.2, max_block_size = 250, noisy = TRUE, seed = NULL,
-  model = "lm")
+FSR(Xy, max_poly_degree = 3, max_interaction_degree = 2,
+  model_type = NULL, cor_type = "pearson", threshold_include = 0.01,
+  threshold_estimate = 0.001, standardize = FALSE, pTraining = 0.8,
+  pValidation = 0.2, min_models = NULL, max_fails = 2, file_name = NULL,
+  store_fit = "none", max_block = 250, noisy = TRUE, seed = NULL)
 }
 \arguments{
 \item{Xy}{matrix or data.frame; outcome must be in final column.}
 
-\item{max_poly_degree}{highest power to raise continuous features; default 4.}
+\item{max_poly_degree}{highest power to raise continuous features; default 3 (cubic).}
 
-\item{max_interaction_degree}{highest interaction order; default 2. Also interacts each level of factors with continuous features.}
+\item{max_interaction_degree}{highest interaction order; default 2 (allow x_i*x_j). Also interacts each level of factors with continuous features.}
 
-\item{cor_type}{correlation to be used for pseudo R^2. Default Kendall's (robust).}
+\item{model_type}{Either 'lm' (linear model), 'logit' (logistic regression currently implemented by glm()), 'multinomial' (multinomial regression via nnet::multinom()), or NULL (auto-detect based on response).}
 
-\item{threshold}{minimum improvement to keep estimating (pseudo R^2 so scale 0 to 1). Default -1.001 means 'estimate all'.}
+\item{cor_type}{correlation to be used for adjusted R^2; pseudo R^2 for classification. Default "pearson"; other options "spearman" and "kendall".}
+
+\item{threshold_include}{minimum improvement to include a recently added term in the model (change in fit originally on 0 to 1 scale). -1.001 means 'include all'. Default: 0.01. (Adjust R^2 for linear models, Pseudo R^2 for logistic regression, out-of-sample accuracy for multinomial models. In latter two cases, the same adjustment for number of predictors is applied as pseudo-R^2.)}
+
+\item{threshold_estimate}{minimum improvement to keep estimating (pseudo R^2 so scale 0 to 1). -1.001 means 'estimate all'. Default: 0.001.}
+
+\item{standardize}{if TRUE (not default), standardizes continuous variables.}
 
 \item{pTraining}{portion of data for training}
 
 \item{pValidation}{portion of data for validation}
 
-\item{max_block_size}{Most of the linear algebra is done recursively in blocks to ease memory managment. Default 250. Changing up or down may slow things...}
+\item{min_models}{minimum number of models to estimate. Defaults to the number of features (unless P > N).}
+
+\item{max_fails}{maximum number of models to FSR() can fail on computationally before exiting. Default == 2.}
+>>>>>>> upstream/master
+
+\item{file_name}{If a file name (and path) is provided, saves output after each model is estimated as an .RData file. ex: file_name = "results.RData". See also store_fit for options as to how much to store in the outputted object.}
+
+\item{store_fit}{If file_name is provided, FSR() will return coefficients, measures of fit, and call details. Save entire fit objects? Options include "none" (default, just save those other items), "accepted_only" (only models that meet the threshold), and "all".}
+
+\item{max_block}{Most of the linear algebra is done recursively in blocks to ease memory managment. Default 250. Changing up or down may slow things...}
 
 \item{noisy}{display measures of fit, progress, etc. Recommended.}
 
@@ -35,4 +51,7 @@ list with slope coefficients, model details, and measures of fit
 }
 \description{
 FSR
+}
+\examples{
+out <- FSR(mtcars)
 }
